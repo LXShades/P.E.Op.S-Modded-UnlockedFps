@@ -4,6 +4,7 @@
 
 FpsInterpolator interpolator;
 
+#define SETGLMODE(functionCall, newValue, persistentValue) if ((persistentValue) != (newValue)) {(functionCall); persistentValue = newValue; }
 #define SETCOL(x)  if(x.col!=ulOLDCOL) {ulOLDCOL=x.col;glColor4ubv((GLubyte*)&x.col);} 
 #define SETPCOL(x)  if(x->c.lcol!=ulOLDCOL) {ulOLDCOL=x->c.lcol;glColor4ubv(x->c.col);}
 
@@ -13,7 +14,7 @@ extern "C" {
 }
 
 void FpsInterpolator::Render() {
-	const bool doClear = false;
+	const bool doClear = true;
 	const bool doInterpolation = true;
 	const int numInterpolations = 2;
 
@@ -28,97 +29,46 @@ void FpsInterpolator::Render() {
 		(previousFrameDraws.size() > 0 && currentFrameDraws.size() > 0 && doInterpolation) ? 
 			MatchVertices(&previousFrameDraws[0], previousFrameDraws.size(), &currentFrameDraws[0], currentFrameDraws.size()) : std::vector<VertexMatch>();
 
-	unsigned long ulOLDCOL = 0;
+	// Begin render
 	bool doRenderFrame = true;
 	int numFramesRendered = 0;
-	GLuint currentTex = 753489;
-	bool currentSmooth = false;
-	
-	isRendering = true;
 
-	glShadeModel(GL_FLAT);
-	glDisable(GL_BLEND);
+	static int targetFrameDuration = 1000/25;
+	if (HIWORD(GetKeyState(VK_RIGHT))) {
+		targetFrameDuration -= 16;
+	}
+	if (HIWORD(GetKeyState(VK_LEFT))) {
+		targetFrameDuration += 16;
+	}
+	if (HIWORD(GetKeyState(VK_DOWN))) {
+		targetFrameDuration = 16;
+	}
+	if (targetFrameDuration <= 0) {
+		targetFrameDuration = 1;
+	}
 
-	DWORD targetFrameDuration = 1000/12;
 	float blendFactor = 0.0f;
 	do {
 		blendFactor = (timeGetTime() - currentFrameTime) / (float)targetFrameDuration;
 
-		if (doInterpolation && blendFactor < 1.0f) {
+		if (doInterpolation /*&& blendFactor < 1.0f*/) {
 			// wait for the next frame
 			/*while (timeGetTime() - previousFrameTime < (int)(targetFrameDuration * blendFactor)) {
 				continue;
 			}*/
 
+			if (blendFactor > 1) blendFactor = 1;
 
-			// Render the interpolatable vertices multiple times
-			for (DrawCommand& command : previousFrameDraws) {
-				const VertexMatch& match = matches[&command - &previousFrameDraws[0]];
-				const DrawCommand* nextCommand = match.polyB;
+			DrawBlendedCommands(matches, blendFactor);
+		}
 
-				// set texture
-				if (currentTex != nextCommand->texture) {
-					if (currentTex == -1) {
-						glEnable(GL_TEXTURE_2D);
-					}
-					else if (nextCommand->texture == -1) {
-						glDisable(GL_TEXTURE_2D);
-					}
-
-					currentTex = nextCommand->texture;
-					glBindTexture(GL_TEXTURE_2D, currentTex);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-				}
-				if (currentSmooth != nextCommand->isSmoothShaded) {
-					glShadeModel(nextCommand->isSmoothShaded ? GL_SMOOTH : GL_FLAT);
-					currentSmooth = nextCommand->isSmoothShaded;
-				}
-
-				// start poly render
-				if (command.numVertices == 4) {
-					glBegin(GL_TRIANGLE_STRIP);
-				}
-				else {
-					glBegin(GL_TRIANGLES);
-				}
-
-				// blend vertices
-				for (int v = 0; v < command.numVertices; v++) {
-					Vertex blended = Vertex(command.vertices[v], nextCommand->vertices[v], blendFactor);
-					SETCOL(nextCommand->vertices[v]);
-					glTexCoord2fv((GLfloat*)&nextCommand->vertices[v].sow); // test
-					glVertex3fv((GLfloat*)&blended.x);
-				}
-
-				glEnd();
-
-				// draw vectors
-				glBegin(GL_LINE_STRIP);
-				float coords[6] = { 0 };
-				for (int v = 0; v < command.numVertices; v++) {
-					coords[0] += command.vertices[v].x;
-					coords[1] += command.vertices[v].y;
-					coords[3] += nextCommand->vertices[v].x;
-					coords[4] += nextCommand->vertices[v].y;
-				}
-				coords[0] /= command.numVertices;
-				coords[1] /= command.numVertices;
-				coords[3] /= command.numVertices;
-				coords[4] /= command.numVertices;
-
-				glVertex3fv((GLfloat*)coords);
-				glVertex3fv((GLfloat*)&coords[3]);
-
-				glEnd();
-			}
+		if (currentFrameDraws.size()) {
+			RenderEntities(&currentFrameDraws[0], currentFrameDraws.size());
 		}
 
 		// Present to screen
 		SwapBuffers(wglGetCurrentDC());
-	} while (blendFactor < 0.99f && doInterpolation);
-
-	isRendering = false;
+	} while (blendFactor < 1.0f && doInterpolation);
 
 	// Replace the command lists
 	previousFrameDraws = currentFrameDraws;
@@ -129,6 +79,184 @@ void FpsInterpolator::Render() {
 	// Update timings
 	previousFrameTime = currentFrameTime;
 	currentFrameTime = timeGetTime();
+}
+
+void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matches, float blendFactor) {
+	GLuint currentTex = 0;
+	unsigned long currentColour = 0;
+	bool currentSmooth = false;
+	bool currentBlend = false;
+
+	// Setup the render mode
+	glShadeModel(GL_FLAT);
+	glDisable(GL_BLEND);
+	glBindTexture(GL_TEXTURE_2D, currentTex);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4ubv((GLubyte*)&currentColour);
+
+	isRendering = true;
+
+	// Render each interpolatable draw command
+	for (DrawCommand& command : previousFrameDraws) {
+		const VertexMatch& match = matches[&command - &previousFrameDraws[0]];
+		const DrawCommand* nextCommand = match.polyB;
+
+		// set texture
+		if (currentTex != nextCommand->texture) {
+			if (currentTex == -1) {
+				glEnable(GL_TEXTURE_2D);
+			} else if (nextCommand->texture == -1) {
+				glDisable(GL_TEXTURE_2D);
+			}
+
+			currentTex = nextCommand->texture;
+			glBindTexture(GL_TEXTURE_2D, currentTex);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		}
+
+		// set shading mode
+		SETGLMODE(glShadeModel(nextCommand->isSmoothShaded ? GL_SMOOTH : GL_FLAT), nextCommand->isSmoothShaded, currentSmooth);
+
+		// set blend mode
+		SETGLMODE(currentBlend ? glEnable(GL_BLEND) : glDisable(GL_BLEND), nextCommand->isBlended, currentBlend);
+
+		// start poly render
+		if (command.numVertices == 4) {
+			glBegin(GL_TRIANGLE_STRIP);
+		} else {
+			glBegin(GL_TRIANGLES);
+		}
+
+		// blend vertices
+		for (int v = 0; v < command.numVertices; v++) {
+			Vertex blended = Vertex(command.vertices[v], nextCommand->vertices[v], blendFactor);
+			SETGLMODE(glColor4ubv((GLubyte*)&nextCommand->vertices[v].col), nextCommand->vertices[v].col, currentColour);
+			glTexCoord2fv((GLfloat*)&nextCommand->vertices[v].sow); // test
+			glVertex3fv((GLfloat*)&blended.x);
+		}
+
+		glEnd();
+
+		// draw motion vectors
+		glBegin(GL_LINE_STRIP);
+		float coords[6] = { 0 };
+
+		currentColour = 0xFF000000;
+		glColor4ubv((GLubyte*)&currentColour);
+
+		for (int v = 0; v < command.numVertices; v++) {
+			coords[0] += command.vertices[v].x;
+			coords[1] += command.vertices[v].y;
+			coords[3] += nextCommand->vertices[v].x;
+			coords[4] += nextCommand->vertices[v].y;
+		}
+		coords[0] /= command.numVertices;
+		coords[1] /= command.numVertices;
+		coords[3] /= command.numVertices;
+		coords[4] /= command.numVertices;
+
+
+		glVertex3fv((GLfloat*)coords);
+		glVertex3fv((GLfloat*)&coords[3]);
+
+		glEnd();
+	}
+
+	isRendering = false;
+}
+
+struct NeighbourLinks {
+	const FpsInterpolator::DrawCommand* neighbours[4];
+
+	struct Border {
+		float aX, aY, aZ;
+		float bX, bY, bZ;
+	} borders[4];
+};
+
+#define TOREGION(x, y) ((((y) / regionHeight * regionWidth + (x) / regionWidth) % (regionSplits * regionSplits)) + regionSplits * regionSplits) % (regionSplits * regionSplits)
+
+void FpsInterpolator::RenderEntities(const DrawCommand* commands, int numCommands) {
+	// Collect neighbour references into each vertex
+	const int regionSplits = 16;
+	int regionWidth = 640 / regionSplits, regionHeight = 640 / regionSplits;
+	const DrawCommand** regions[regionSplits * regionSplits];
+	int regionSizes[regionSplits * regionSplits] = { 0 };
+	NeighbourLinks* links = new NeighbourLinks[numCommands];
+	
+	// Initialise helpers
+	memset(links, 0, numCommands * sizeof(links[0]));
+	for (int i = 0; i < regionSplits * regionSplits; i++) {
+		regions[i] = new const DrawCommand*[numCommands * 4];
+	}
+
+	// Fill region map
+	for (const DrawCommand* command = commands; command < &commands[numCommands]; command++) {
+		for (int v = 0; v < command->numVertices; v++) {
+			int region = TOREGION(command->vertices[v].iX, command->vertices[v].iY);
+			regions[region][regionSizes[region]++] = command;
+		}
+	}
+
+	// Find neighbour matches
+	for (const DrawCommand* command = commands; command < &commands[numCommands]; command++) {
+		for (int v1 = 0; v1 < command->numVertices; v1++) {
+			const Vertex *v1a = &command->vertices[v1], *v1b = &command->vertices[(v1 + 1) % command->numVertices];
+			int region = TOREGION(v1a->iX, v1a->iY);
+
+			for (const DrawCommand** _other = regions[region]; _other < &regions[region][regionSizes[region]]; _other++) {
+				const DrawCommand* other = *_other;
+
+				if (other == command) {
+					continue;
+				}
+
+				for (int v2 = v1; v2 < other->numVertices; v2++) {
+					const Vertex* v2a = &other->vertices[v2], *v2b = &other->vertices[(v2 + 1) % other->numVertices];
+
+					if (v1a->iX == v2a->iX && v1a->iY == v2a->iY && v1b->iX == v2b->iX && v1b->iY == v2b->iY) {
+						links[command - commands].neighbours[v1] = other;
+						links[command - commands].borders[v1].aX = v1a->iX;
+						links[command - commands].borders[v1].aY = v1a->iY;
+						links[command - commands].borders[v1].bX = v1b->iX;
+						links[command - commands].borders[v1].bY = v1b->iY;
+					}
+					else if (v1a->iX == v2b->iX && v1a->iY == v2b->iY && v1b->iX == v2a->iX && v1b->iY == v2a->iY) {
+						links[command - commands].neighbours[v1] = other;
+						links[command - commands].borders[v1].aX = v1a->iX;
+						links[command - commands].borders[v1].aY = v1a->iY;
+						links[command - commands].borders[v1].bX = v1b->iX;
+						links[command - commands].borders[v1].bY = v1b->iY;
+					}
+				}
+			}
+		}
+	}
+
+	// Render neighbour edges
+	GLuint currentColour = 0xFF00FF00;
+
+	for (int i = 0; i < numCommands; i++) 
+	{
+		for (int v = 0; v < commands[i].numVertices; v++) {
+			if (links[i].neighbours[v] != NULL) {
+				glBegin(GL_LINES);
+
+				glColor4ubv((GLubyte*)&currentColour);
+				glVertex3fv((GLfloat*)&links[i].borders[v].aX);
+				glVertex3fv((GLfloat*)&links[i].borders[v].bX);
+
+				glEnd();
+			}
+		}
+	}
+
+	// Cleanup
+	for (int i = 0; i < regionSplits * regionSplits; i++) {
+		delete[] regions[i];
+	}
+	delete[] links;
 }
 
 inline float Distance(float aX, float aY, float bX, float bY) {
@@ -174,23 +302,18 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 		if (smallestX >= regionWidth) smallestX = regionWidth - 1;
 		if (smallestY >= regionHeight) smallestY = regionHeight - 1;
 
-		// Insert into the region collection
-		int region = XYTOREGION(smallestX, smallestY);
+		// add it into overlapping regions
+		for (int y = smallestY / regionSplitY - regionOverlap; y <= smallestY / regionSplitY + regionOverlap; y++) {
+			if (y < 0 || y >= numSplits) {
+				continue;
+			}
 
-		regionsB[region].push_back(b);
+			for (int x = smallestX / regionSplitX - regionOverlap; x <= smallestX / regionSplitX + regionOverlap; x++) {
+				if (x < 0 || x >= numSplits) {
+					continue;
+				}
 
-		if (regionOverlap) {
-			if (region + numSplits < numRegions) {
-				regionsB[region + numSplits].push_back(b);
-			}
-			if (region - numSplits >= 0) {
-				regionsB[region - numSplits].push_back(b);
-			}
-			if (((region + 1) % numSplits) != 0) {
-				regionsB[region + 1].push_back(b);
-			}
-			if (region - 1 > 0 && ((region - 1) % numSplits) != numSplits - 1) {
-				regionsB[region - 1].push_back(b);
+				regionsB[y * numSplits + x].push_back(b);
 			}
 		}
 	}

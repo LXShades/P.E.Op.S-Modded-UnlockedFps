@@ -263,7 +263,7 @@ __inline void PRIMdrawTexturedTri(OGLVertex* vertex1, OGLVertex* vertex2,
 __inline void PRIMdrawTexGouraudTriColor(OGLVertex* vertex1, OGLVertex* vertex2, 
                                          OGLVertex* vertex3) 
 {
-	interpolatorRecord(vertex1, vertex2, vertex3, NULL, gTexName, bDrawSmoothShaded);
+	interpolatorRecord(vertex1, vertex2, vertex3, NULL, gTexName, bDrawSmoothShaded, bBlendEnable);
 
  glBegin(GL_TRIANGLES);
 
@@ -286,7 +286,7 @@ __inline void PRIMdrawTexGouraudTriColor(OGLVertex* vertex1, OGLVertex* vertex2,
 __inline void PRIMdrawTexGouraudTriColorQuad(OGLVertex* vertex1, OGLVertex* vertex2, 
                                              OGLVertex* vertex3, OGLVertex* vertex4) 
 {
-	interpolatorRecord(vertex1, vertex2, vertex4, vertex3, gTexName, bDrawSmoothShaded);
+	interpolatorRecord(vertex1, vertex2, vertex4, vertex3, gTexName, bDrawSmoothShaded, bBlendEnable);
  glBegin(GL_TRIANGLE_STRIP);
   SETPCOL(vertex1); 
   glTexCoord2fv(&vertex1->sow);
@@ -335,7 +335,7 @@ __inline void PRIMdrawTri2(OGLVertex* vertex1, OGLVertex* vertex2,
 __inline void PRIMdrawGouraudTriColor(OGLVertex* vertex1, OGLVertex* vertex2, 
                                       OGLVertex* vertex3) 
 {
-	interpolatorRecord(vertex1, vertex2, vertex3, NULL, -1, bDrawSmoothShaded);
+	interpolatorRecord(vertex1, vertex2, vertex3, NULL, -1, bDrawSmoothShaded, bBlendEnable);
  glBegin(GL_TRIANGLES);                           
   SETPCOL(vertex1); 
   glVertex3fv(&vertex1->x);
@@ -353,7 +353,7 @@ __inline void PRIMdrawGouraudTriColor(OGLVertex* vertex1, OGLVertex* vertex2,
 __inline void PRIMdrawGouraudTri2Color(OGLVertex* vertex1, OGLVertex* vertex2, 
                                        OGLVertex* vertex3, OGLVertex* vertex4) 
 {
-	interpolatorRecord(vertex1, vertex3, vertex2, vertex4, -1, bDrawSmoothShaded);
+	interpolatorRecord(vertex1, vertex3, vertex2, vertex4, -1, bDrawSmoothShaded, bBlendEnable);
  glBegin(GL_TRIANGLE_STRIP);                           
   SETPCOL(vertex1); 
   glVertex3fv(&vertex1->x);

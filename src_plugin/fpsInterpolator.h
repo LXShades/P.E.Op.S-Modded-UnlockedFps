@@ -4,9 +4,6 @@
 #include <vector>
 
 class FpsInterpolator {
-public:
-	// Renders the interpolated frames
-	void Render();
 
 public:
 	// All-purpose vertex that can be preserved
@@ -30,17 +27,19 @@ public:
 
 	// A draw command containing a draw type, vertices, and STUFF
 	struct DrawCommand {
-		DrawCommand(Vertex& a, Vertex& b, Vertex& c, Vertex& d, int texture, bool bDrawSmoothShaded) {
+		DrawCommand(Vertex& a, Vertex& b, Vertex& c, Vertex& d, int texture, bool bDrawSmoothShaded, bool bBlend) {
 			vertices[0] = a; vertices[1] = b; vertices[2] = c; vertices[3] = d;
 			numVertices = 4;
 			isSmoothShaded = bDrawSmoothShaded;
+			isBlended = bBlend;
 			this->texture = texture;
 		}
 
-		DrawCommand(Vertex& a, Vertex& b, Vertex& c, int texture, bool bDrawSmoothShaded) {
+		DrawCommand(Vertex& a, Vertex& b, Vertex& c, int texture, bool bDrawSmoothShaded, bool bBlend) {
 			vertices[0] = a; vertices[1] = b; vertices[2] = c;
 			numVertices = 3;
 			isSmoothShaded = bDrawSmoothShaded;
+			isBlended = bBlend;
 			this->texture = texture;
 		}
 
@@ -48,6 +47,7 @@ public:
 		int numVertices;
 		int texture;
 		bool isSmoothShaded;
+		bool isBlended;
 	};
 
 	struct PsxCommand {
@@ -62,6 +62,16 @@ public:
 
 		float similarity;
 	};
+
+public:
+	// Renders the interpolated frames
+	void Render();
+
+	// Draws previousFrameDraws blended towards currentFrameDraws by 'blendfactor'
+	void DrawBlendedCommands(const std::vector<struct FpsInterpolator::VertexMatch>& matches, float blendFactor);
+
+	// Draws entity lines and colours
+	void RenderEntities(const DrawCommand * commands, int numCommands);
 
 public:
 	std::vector<VertexMatch> MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB);
@@ -98,7 +108,7 @@ private:
 extern FpsInterpolator interpolator;
 #else
 // C wrapper for C++ code
-void interpolatorRecord(struct OGLVertex* a, struct OGLVertex* b, struct OGLVertex* c, struct OGLVertex* d, int texture, int bDrawSmoothShades);
+void interpolatorRecord(struct OGLVertex* a, struct OGLVertex* b, struct OGLVertex* c, struct OGLVertex* d, int texture, int bDrawSmoothShades, int bBlend);
 int interpolatorRecordPsx(int gpuCommand, const unsigned char* data);
 void interpolatorUpdateDisplay();
 
