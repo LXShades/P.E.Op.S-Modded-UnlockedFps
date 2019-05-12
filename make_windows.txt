@@ -1,0 +1,8 @@
+How to compile the Windows plugin:
+
+- for easy going, you will need at least a Visual Studio Version 6.0. Newer VS versions 
+  can easiliy convert the project file, I've compiled the release binaries with VS 2005.
+  
+  That's all. No NASM, no special libraries, no nothing (well, gl.h _is_ needed ;))
+
+

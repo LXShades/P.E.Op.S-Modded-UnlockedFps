@@ -1,0 +1,14 @@
+How to compile the MesaGL plugin:
+
+- open a terminal window in the "src_plugin" folder, and type "make" + ENTER
+
+How to compile the plugin configuration tool:
+
+- extract the "gpucfg.tar.gz" archive from the "src_linux_cfg" folder, go 
+  to the "gpucfg\src" folder and type "make" + ENTER. Maybe some special libraries
+  are needed though, the config tool is done with a very old version of GLADE.
+  If you want to make a newer tool, go ahead... the major work of the tool is
+  done in "main.c", this file is easy to adapt to other GUI libraries, imho.
+
+
+
