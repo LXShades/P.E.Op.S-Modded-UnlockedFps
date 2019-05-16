@@ -154,9 +154,6 @@
     <ClCompile Include="draw.c" />
     <ClCompile Include="fps.c" />
     <ClCompile Include="fpsInterpolator.cpp" />
-    <ClCompile Include="fpsInterpolatorC.cpp">
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsCpp</CompileAs>
-    </ClCompile>
     <ClCompile Include="gpu.c" />
     <ClCompile Include="gpuPeopsOpenGL.c" />
     <ClCompile Include="key.c" />

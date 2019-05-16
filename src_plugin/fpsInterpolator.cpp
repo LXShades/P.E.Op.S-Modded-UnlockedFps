@@ -34,6 +34,7 @@ void FpsInterpolator::Render() {
 	int numFramesRendered = 0;
 
 	static int targetFrameDuration = 1000/25;
+
 	if (HIWORD(GetKeyState(VK_RIGHT))) {
 		targetFrameDuration -= 16;
 	}
@@ -128,8 +129,14 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matche
 			glBegin(GL_TRIANGLES);
 		}
 
-		// blend vertices
-		for (int v = 0; v < command.numVertices; v++) {
+		// blend vertices and render
+		static const int vertexOrderQuad[4] = { 0, 1, 3, 2 };
+		static const int vertexOrderTri[3] = { 0, 1, 2 };
+
+		const int* vertexOrder = command.numVertices == 4 ? vertexOrderQuad : vertexOrderTri;
+
+		for (int _v = 0; _v < command.numVertices; _v++) {
+			int v = vertexOrder[_v];
 			Vertex blended = Vertex(command.vertices[v], nextCommand->vertices[v], blendFactor);
 			SETGLMODE(glColor4ubv((GLubyte*)&nextCommand->vertices[v].col), nextCommand->vertices[v].col, currentColour);
 			glTexCoord2fv((GLfloat*)&nextCommand->vertices[v].sow); // test
@@ -201,6 +208,8 @@ void FpsInterpolator::RenderEntities(const DrawCommand* commands, int numCommand
 
 	// Find neighbour matches
 	for (const DrawCommand* command = commands; command < &commands[numCommands]; command++) {
+		NeighbourLinks& link = links[command - commands];
+
 		for (int v1 = 0; v1 < command->numVertices; v1++) {
 			const Vertex *v1a = &command->vertices[v1], *v1b = &command->vertices[(v1 + 1) % command->numVertices];
 			int region = TOREGION(v1a->iX, v1a->iY);
@@ -216,18 +225,28 @@ void FpsInterpolator::RenderEntities(const DrawCommand* commands, int numCommand
 					const Vertex* v2a = &other->vertices[v2], *v2b = &other->vertices[(v2 + 1) % other->numVertices];
 
 					if (v1a->iX == v2a->iX && v1a->iY == v2a->iY && v1b->iX == v2b->iX && v1b->iY == v2b->iY) {
-						links[command - commands].neighbours[v1] = other;
-						links[command - commands].borders[v1].aX = v1a->iX;
-						links[command - commands].borders[v1].aY = v1a->iY;
-						links[command - commands].borders[v1].bX = v1b->iX;
-						links[command - commands].borders[v1].bY = v1b->iY;
+						link.neighbours[v1] = other;
+						link.borders[v1].aX = v1a->iX;
+						link.borders[v1].aY = v1a->iY;
+						link.borders[v1].bX = v1b->iX;
+						link.borders[v1].bY = v1b->iY;
+						links[other - commands].neighbours[v2] = command;
+						link.borders[v2].aX = v1a->iX;
+						link.borders[v2].aY = v1a->iY;
+						link.borders[v2].bX = v1b->iX;
+						link.borders[v2].bY = v1b->iY;
 					}
 					else if (v1a->iX == v2b->iX && v1a->iY == v2b->iY && v1b->iX == v2a->iX && v1b->iY == v2a->iY) {
-						links[command - commands].neighbours[v1] = other;
-						links[command - commands].borders[v1].aX = v1a->iX;
-						links[command - commands].borders[v1].aY = v1a->iY;
-						links[command - commands].borders[v1].bX = v1b->iX;
-						links[command - commands].borders[v1].bY = v1b->iY;
+						link.neighbours[v1] = other;
+						link.borders[v1].aX = v1b->iX;
+						link.borders[v1].aY = v1b->iY;
+						link.borders[v1].bX = v1a->iX;
+						link.borders[v1].bY = v1a->iY;
+						links[other - commands].neighbours[v2] = command;
+						link.borders[v2].aX = v1b->iX;
+						link.borders[v2].aY = v1b->iY;
+						link.borders[v2].bX = v1a->iX;
+						link.borders[v2].bY = v1a->iY;
 					}
 				}
 			}
@@ -404,4 +423,66 @@ void FpsInterpolator::RegisterFrame()
 
 void FpsInterpolator::SetFrameRate(int framerate) {
 	this->framerate = framerate;
+}
+
+
+/* C functions */
+extern "C" {
+#include "stdafx.h"
+#include "externals.h"
+
+	int currentPsxCommandIndex = 0;
+
+	FpsInterpolator::Vertex OGLToVertex(OGLVertex* ogl) {
+		FpsInterpolator::Vertex vert;
+
+		vert.x = ogl->x;
+		vert.y = ogl->y;
+		vert.z = ogl->z;
+		vert.iX = (int)ogl->x;
+		vert.iY = (int)ogl->y;
+		vert.iZ = (int)ogl->z;
+		vert.sow = ogl->sow;
+		vert.tow = ogl->tow;
+		vert.col = ogl->c.lcol;
+		return vert;
+	}
+
+	void interpolatorRecord(OGLVertex* a, OGLVertex* b, OGLVertex* c, OGLVertex* d, int texture, int bDrawSmoothShaded, int bBlend) {
+		if (d == NULL) {
+			interpolator.RecordDrawCommand(FpsInterpolator::DrawCommand(OGLToVertex(a), OGLToVertex(b), OGLToVertex(c), texture, bDrawSmoothShaded == 0 ? false : true, bBlend == 0 ? false : true));
+		}
+		else {
+			interpolator.RecordDrawCommand(FpsInterpolator::DrawCommand(OGLToVertex(a), OGLToVertex(b), OGLToVertex(c), OGLToVertex(d), texture, bDrawSmoothShaded == 0 ? false : true, bBlend == 0 ? false : true));
+		}
+	}
+
+	int interpolatorRecordPsx(int gpuCommand, unsigned char* data) {
+		//interpolator.RecordPsxCommand(gpuCommand, data);
+
+		// return 0 to do original call
+		return 0;
+	}
+
+	void interpolatorUpdateDisplay() {
+		interpolator.Render();
+	}
+
+	void CallPrimFunc(int gpuCommand, unsigned char* data) {
+		primTableJ[gpuCommand](data);
+	}
+
+	void initInterpolator() {
+		interpolator = FpsInterpolator();
+	}
+
+	void resetGpuThing() {
+		//PSXDisplay.DrawOffset.x = PSXDisplay.DrawOffset.y = 0;
+	}
+
+	int interpolatorManageFramecap(int framerate) {
+		interpolator.RegisterFrame();
+		interpolator.SetFrameRate(framerate);
+		return 1;
+	}
 }

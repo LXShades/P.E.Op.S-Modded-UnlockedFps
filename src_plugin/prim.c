@@ -286,7 +286,7 @@ __inline void PRIMdrawTexGouraudTriColor(OGLVertex* vertex1, OGLVertex* vertex2,
 __inline void PRIMdrawTexGouraudTriColorQuad(OGLVertex* vertex1, OGLVertex* vertex2, 
                                              OGLVertex* vertex3, OGLVertex* vertex4) 
 {
-	interpolatorRecord(vertex1, vertex2, vertex4, vertex3, gTexName, bDrawSmoothShaded, bBlendEnable);
+	interpolatorRecord(vertex1, vertex2, vertex3, vertex4, gTexName, bDrawSmoothShaded, bBlendEnable);
  glBegin(GL_TRIANGLE_STRIP);
   SETPCOL(vertex1); 
   glTexCoord2fv(&vertex1->sow);
@@ -353,7 +353,7 @@ __inline void PRIMdrawGouraudTriColor(OGLVertex* vertex1, OGLVertex* vertex2,
 __inline void PRIMdrawGouraudTri2Color(OGLVertex* vertex1, OGLVertex* vertex2, 
                                        OGLVertex* vertex3, OGLVertex* vertex4) 
 {
-	interpolatorRecord(vertex1, vertex3, vertex2, vertex4, -1, bDrawSmoothShaded, bBlendEnable);
+	interpolatorRecord(vertex1, vertex4, vertex3, vertex2, -1, bDrawSmoothShaded, bBlendEnable);
  glBegin(GL_TRIANGLE_STRIP);                           
   SETPCOL(vertex1); 
   glVertex3fv(&vertex1->x);

@@ -57,9 +57,6 @@
     <ClCompile Include="fpsInterpolator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="fpsInterpolatorC.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="CppDllMain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
