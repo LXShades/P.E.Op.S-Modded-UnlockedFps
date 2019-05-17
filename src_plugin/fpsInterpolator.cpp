@@ -157,7 +157,7 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matche
 	unsigned long currentColour = 0;
 	bool currentSmooth = false;
 	bool currentBlend = false;
-	bool doRenderSimilarities = true;
+	bool doRenderSimilarities = false;
 	int renderSimilarityMax = 0;
 
 	if (doRenderSimilarities && matches.size() > 0) {
