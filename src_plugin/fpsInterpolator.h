@@ -18,15 +18,17 @@ public:
 			tow = a.tow;
 			col = a.col;
 		}
-
-		int iX, iY, iZ;
-		float x, y, z;
-		float sow, tow;
-
+		
+		// Main attributes
+		float x, y, z;             // coords
+		float sow, tow;            // UVs
 		union {
-			unsigned int col;
-			unsigned char bCol[4];
+			unsigned int col;      // colour (RGBA uint32)
+			unsigned char bCol[4]; // colour (R,G,B,A bytes)
 		};
+
+		// Helper attributes
+		int iX, iY, iZ; // integer versions of coords
 	};
 
 	// A draw command containing a draw type, vertices, and STUFF
@@ -37,6 +39,19 @@ public:
 			isSmoothShaded = bDrawSmoothShaded;
 			isBlended = bBlend;
 			this->texture = texture;
+
+			if (b.iX < minX) { minX = b.iX; }
+			if (c.iX < minX) { minX = c.iX; }
+			if (d.iX < minX) { minX = d.iX; }
+			if (b.iY < minY) { minY = b.iY; }
+			if (c.iY < minY) { minY = c.iY; }
+			if (d.iY < minY) { minY = d.iY; }
+			if (b.iX > maxX) { maxX = b.iX; }
+			if (c.iX > maxX) { maxX = c.iX; }
+			if (d.iX > maxX) { maxX = d.iX; }
+			if (b.iY > maxY) { maxY = b.iY; }
+			if (c.iY > maxY) { maxY = c.iY; }
+			if (d.iY > maxY) { maxY = d.iY; }
 		}
 
 		DrawCommand(Vertex& a, Vertex& b, Vertex& c, int texture, bool bDrawSmoothShaded, bool bBlend) {
@@ -45,13 +60,32 @@ public:
 			isSmoothShaded = bDrawSmoothShaded;
 			isBlended = bBlend;
 			this->texture = texture;
+
+			minX = vertices[0].iX;
+			minY = vertices[0].iY;
+			maxX = vertices[0].iX;
+			maxY = vertices[0].iY;
+			
+			if (b.iX < minX) { minX = b.iX; }
+			if (c.iX < minX) { minX = c.iX; }
+			if (b.iY < minY) { minY = b.iY; }
+			if (c.iY < minY) { minY = c.iY; }
+			if (b.iX > maxX) { maxX = b.iX; }
+			if (c.iX > maxX) { maxX = c.iX; }
+			if (b.iY > maxY) { maxY = b.iY; }
+			if (c.iY > maxY) { maxY = c.iY; }
+
 		}
 
+		// Rendering attributes
 		Vertex vertices[4];
 		int numVertices;
 		int texture;
 		bool isSmoothShaded;
 		bool isBlended;
+
+		// Helper attributes
+		int minX, minY, maxX, maxY;
 	};
 
 	struct PsxCommand {

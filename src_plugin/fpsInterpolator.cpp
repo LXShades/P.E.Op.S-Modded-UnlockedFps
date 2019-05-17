@@ -39,7 +39,7 @@ void FpsInterpolator::Render() {
 
 	// ok, now be amazing and shit, and go through the entity's neighbours matching everything up nicely
 	std::vector<const DrawCommand*> bestMatches;
-	if (previousEntities.size() > 0 && 0) {
+	if (previousEntities.size() > 0 && false) {
 		std::queue<const DrawCommand*> connectedPolys;
 		bool* closed = new bool[previousFrameDraws.size()];
 		VertexMatch* bestMatch = nullptr;
@@ -464,13 +464,13 @@ int regionProcessTime = 0;
 
 std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB) {
 	const int regionWidth = 800, regionHeight = 700;
-	const int regionSplits = 8;
+	const int regionSplits = 6;
 	const int numRegions = regionSplits * regionSplits;
 	const int regionSplitX = regionWidth / regionSplits, regionSplitY = regionHeight / regionSplits;
 	const int regionOverlap = 1;
 	std::vector<const DrawCommand*> regionsA[numRegions], regionsB[numRegions];
 	std::vector<VertexMatch> matches;
-	const int distanceWeight = 5000, colourWeight = 255, textureWeight = 10000;
+	const int distanceWeight = 5000, colourWeight = 0, textureWeight = 1000;
 
 	// Prealloc regions
 	for (int i = 0; i < numRegions; i++) {
@@ -481,25 +481,15 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 	DWORD time = timeGetTime();
 	int globalSmallestX = 99999, globalSmallestY = 999999, globalLargestX = -99999, globalLargestY = -99999;
 	for (const DrawCommand* b = vertsB; b < &vertsB[numVertsB]; b++) {
-		// find smallest coordinates in vertices
-		int smallestX = 9999, smallestY = 9999;
-		
-		for (int v = 0; v < b->numVertices; v++) {
-			if (b->vertices[v].iX < smallestX) {
-				smallestX = b->vertices[v].iX;
-			} else if (b->vertices[v].iY < smallestY) {
-				smallestY = b->vertices[v].iY;
-			}
-		}
-
-		if (smallestX < globalSmallestX) globalSmallestX = smallestX;
-		if (smallestY < globalSmallestY) globalSmallestY = smallestY;
-		if (smallestX > globalLargestX) globalLargestX = smallestX;
-		if (smallestY > globalLargestY) globalLargestY = smallestY;
+		// refresh globalSmallestX
+		if (b->minX < globalSmallestX) globalSmallestX = b->minX;
+		if (b->minY < globalSmallestY) globalSmallestY = b->minY;
+		if (b->minX > globalLargestX) globalLargestX = b->minX;
+		if (b->minY > globalLargestY) globalLargestY = b->minY;
 
 		// add it into overlapping regions
-		for (int y = smallestY - regionOverlap * regionSplitY; y <= smallestY + regionOverlap * regionSplitY; y += regionSplitY) {
-			for (int x = smallestX - regionOverlap * regionSplitX; x <= smallestX + regionOverlap * regionSplitX; x += regionSplitX) {
+		for (int y = b->minY - regionOverlap * regionSplitY; y <= b->minY + regionOverlap * regionSplitY; y += regionSplitY) {
+			for (int x = b->minX - regionOverlap * regionSplitX; x <= b->minX + regionOverlap * regionSplitX; x += regionSplitX) {
 				regionsB[TOREGION(x, y)].push_back(b);
 			}
 		}
@@ -520,20 +510,8 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 		match.polyA = a;
 		match.polyB = a;
 
-		// Detect which region this is in
-		int smallestX = 9999, smallestY = 9999;
-
-		for (int v = 0; v < a->numVertices; v++) {
-			if (a->vertices[v].iX < smallestX) {
-				smallestX = a->vertices[v].iX;
-			}
-			else if (a->vertices[v].iY < smallestY) {
-				smallestY = a->vertices[v].iY;
-			}
-		}
-
 		// Find the most similar vertex
-		int aRegion = TOREGION(smallestX, smallestY);
+		int aRegion = TOREGION(a->minX, a->minY);
 
 		for (const DrawCommand* b : regionsB[aRegion]) {
 			// ignore polys with mismatching side counts
