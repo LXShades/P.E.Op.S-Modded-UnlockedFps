@@ -30,9 +30,9 @@ void FpsInterpolator::Render() {
 	currentEntities = IsolateEntities(&currentFrameDraws[0], currentFrameDraws.size());
 
 	// Identify interpolatable vertices
-	std::vector<VertexMatch> matches = 
+	std::vector<PolyMatch> matches = 
 		(previousFrameDraws.size() > 0 && currentFrameDraws.size() > 0 && doInterpolation) ? 
-			MatchVertices(&previousFrameDraws[0], previousFrameDraws.size(), &currentFrameDraws[0], currentFrameDraws.size()) : std::vector<VertexMatch>();
+			MatchVertices(&previousFrameDraws[0], previousFrameDraws.size(), &currentFrameDraws[0], currentFrameDraws.size()) : std::vector<PolyMatch>();
 
 	// go through matches, determining the most common entity connections
 	// find the most confident matches
@@ -42,7 +42,7 @@ void FpsInterpolator::Render() {
 	if (previousEntities.size() > 0 && false) {
 		std::queue<const DrawCommand*> connectedPolys;
 		bool* closed = new bool[previousFrameDraws.size()];
-		VertexMatch* bestMatch = nullptr;
+		PolyMatch* bestMatch = nullptr;
 
 		memset(closed, 0, sizeof(bool) * previousFrameDraws.size());
 
@@ -52,9 +52,9 @@ void FpsInterpolator::Render() {
 			bestMatch = nullptr;
 
 			for (int i = 0; i < matches.size(); i++) {
-				if (!closed[i] && matches[i].similarity < bestSimilarity && matches[i].polyA != matches[i].polyB) {
+				if (!closed[i] && matches[i].divergence < bestSimilarity && matches[i].polyA != matches[i].polyB) {
 					bestMatch = &matches[i];
-					bestSimilarity = matches[i].similarity;
+					bestSimilarity = matches[i].divergence;
 				}
 			}
 
@@ -153,7 +153,7 @@ void FpsInterpolator::Render() {
 	currentFrameTime = timeGetTime();
 }
 
-void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matches, float blendFactor) {
+void FpsInterpolator::DrawBlendedCommands(const std::vector<PolyMatch>& matches, float blendFactor) {
 	GLuint currentTex = 0;
 	unsigned long currentColour = 0;
 	bool currentSmooth = false;
@@ -163,9 +163,9 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matche
 
 	if (doRenderSimilarities && matches.size() > 0) {
 		// find the maximum similarity
-		std::vector<VertexMatch> copy = matches;
-		std::sort(copy.begin(), copy.end(), [](VertexMatch& a, VertexMatch& b) { return a.similarity < b.similarity; });
-		renderSimilarityMax = copy[copy.size() * 4 / 5].similarity;//std::max_element(matches.begin(), matches.end(), [](const VertexMatch& a, const VertexMatch& b) -> bool {return a.similarity < b.similarity; })->similarity;
+		std::vector<PolyMatch> copy = matches;
+		std::sort(copy.begin(), copy.end(), [](PolyMatch& a, PolyMatch& b) { return a.divergence < b.divergence; });
+		renderSimilarityMax = copy[copy.size() * 4 / 5].divergence;//std::max_element(matches.begin(), matches.end(), [](const VertexMatch& a, const VertexMatch& b) -> bool {return a.similarity < b.similarity; })->similarity;
 		if (renderSimilarityMax == 0) {
 			renderSimilarityMax = 1; // no-divide-by-zero hack
 		}
@@ -182,7 +182,7 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matche
 
 	// Render each interpolatable draw command
 	for (DrawCommand& command : previousFrameDraws) {
-		const VertexMatch& match = matches[&command - &previousFrameDraws[0]];
+		const PolyMatch& match = matches[&command - &previousFrameDraws[0]];
 		const DrawCommand* nextCommand = match.polyB;
 
 		// set texture
@@ -224,7 +224,7 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matche
 			unsigned int vertexColour = nextCommand->vertices[v].col;
 
 			if (doRenderSimilarities) {
-				vertexColour = ((int)match.similarity * 0xFF / renderSimilarityMax); // red means least similar because I named the variable backwards lol
+				vertexColour = ((int)match.divergence * 0xFF / renderSimilarityMax); // red means least similar because I named the variable backwards lol
 				if (vertexColour > 0xFF) {
 					vertexColour = 0xFF;
 				}
@@ -242,7 +242,7 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<VertexMatch>& matche
 	isRendering = false;
 }
 
-void FpsInterpolator::DrawMotionVectors(const std::vector<VertexMatch>& matches) {
+void FpsInterpolator::DrawMotionVectors(const std::vector<PolyMatch>& matches) {
 	GLuint currentColour = 0xFF000000;
 
 	glBegin(GL_LINES);
@@ -462,15 +462,14 @@ inline float Distance(float aX, float aY, float bX, float bY) {
 int matchProcessTime = 0;
 int regionProcessTime = 0;
 
-std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB) {
+std::vector<FpsInterpolator::PolyMatch> FpsInterpolator::MatchVertices(const DrawCommand* commandsA, int numCommandsA, const DrawCommand* commandsB, int numCommandsB) {
 	const int regionWidth = 800, regionHeight = 700;
 	const int regionSplits = 6;
 	const int numRegions = regionSplits * regionSplits;
 	const int regionSplitX = regionWidth / regionSplits, regionSplitY = regionHeight / regionSplits;
 	const int regionOverlap = 1;
 	std::vector<const DrawCommand*> regionsA[numRegions], regionsB[numRegions];
-	std::vector<VertexMatch> matches;
-	const int distanceWeight = 5000, colourWeight = 0, textureWeight = 1000;
+	std::vector<PolyMatch> matches;
 
 	// Prealloc regions
 	for (int i = 0; i < numRegions; i++) {
@@ -480,12 +479,12 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 	// Assign regions in vertsB
 	DWORD time = timeGetTime();
 	int globalSmallestX = 99999, globalSmallestY = 999999, globalLargestX = -99999, globalLargestY = -99999;
-	for (const DrawCommand* b = vertsB; b < &vertsB[numVertsB]; b++) {
+	for (const DrawCommand* b = commandsB; b < &commandsB[numCommandsB]; b++) {
 		// refresh globalSmallestX
 		if (b->minX < globalSmallestX) globalSmallestX = b->minX;
 		if (b->minY < globalSmallestY) globalSmallestY = b->minY;
-		if (b->minX > globalLargestX) globalLargestX = b->minX;
-		if (b->minY > globalLargestY) globalLargestY = b->minY;
+		if (b->maxX > globalLargestX) globalLargestX = b->maxX;
+		if (b->maxY > globalLargestY) globalLargestY = b->maxY;
 
 		// add it into overlapping regions
 		for (int y = b->minY - regionOverlap * regionSplitY; y <= b->minY + regionOverlap * regionSplitY; y += regionSplitY) {
@@ -498,14 +497,14 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 	// record timestamps
 	regionProcessTime = timeGetTime() - time;
 	time = timeGetTime();
-	matches.reserve(numVertsA);
+	matches.reserve(numCommandsA);
 
 	// search for matches
-	const int avgMaxDistance = 500;
+	int* numBPolyMatches = new int[numCommandsB]();
 
-	for (const DrawCommand* a = vertsA; a < &vertsA[numVertsA]; a++) {
-		VertexMatch match;
-		int bestSimilarity = 9999999;
+	for (const DrawCommand* a = commandsA; a < &commandsA[numCommandsA]; a++) {
+		PolyMatch match;
+		int bestDivergence = 9999999;
 
 		match.polyA = a;
 		match.polyB = a;
@@ -519,43 +518,74 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 				continue;
 			}
 
-			int similarity = 0;
+			int divergence = a->CalculateDivergence(*b);
 
-			for (int v = 0; v < a->numVertices; v++) {
-				int xDiff = (a->vertices[v].iX - b->vertices[v].iX), yDiff = (a->vertices[v].iY - b->vertices[v].iY);
-				int rDiff = a->vertices[v].bCol[0] - b->vertices[v].bCol[0];
-				int gDiff = a->vertices[v].bCol[1] - b->vertices[v].bCol[1];
-				int bDiff = a->vertices[v].bCol[2] - b->vertices[v].bCol[2];
-
-				// space difference
-				similarity += ((xDiff ^ (xDiff >> 31)) - (xDiff >> 31) + (yDiff ^ (yDiff >> 31)) - (yDiff >> 31)) * distanceWeight / avgMaxDistance;
-
-				if (b->texture != -1 && a->texture != -1) {
-					int sDiff = (a->vertices[v].sow - b->vertices[v].sow) * textureWeight, tDiff = (a->vertices[v].tow - b->vertices[v].tow) * textureWeight;
-
-					// texture difference
-					similarity += (sDiff ^ (sDiff >> 31)) - (sDiff >> 31) + (tDiff ^ (tDiff >> 31)) - (tDiff >> 31);
-				}
-
-				if (b->texture != a->texture) {
-					similarity += textureWeight;
-				}
-
-				// colour difference
-				similarity += ((rDiff ^ (rDiff >> 31)) - (rDiff >> 31) + (gDiff ^ (gDiff >> 31)) - (gDiff >> 31) + (bDiff ^ (bDiff >> 31)) - (bDiff >> 31)) * colourWeight / (255*3);
-			}
-
-			if (similarity < bestSimilarity) {
-				bestSimilarity = similarity;
+			if (divergence < bestDivergence) {
+				bestDivergence = divergence;
 				match.polyB = b;
-				match.similarity = similarity;
+				match.divergence = divergence;
 			}
+		}
+
+		// count the number of times this has been matched
+		if (match.polyB != a) {
+			numBPolyMatches[match.polyB - commandsB]++;
 		}
 
 		matches.push_back(match);
 	}
 
+	// Find over-matched polygons and identify stuff that make it not do that anymore...
+	for (int i = 0; i < numCommandsB; i++) {
+		if (numBPolyMatches[i] > 1) {
+			// find them again (move this?)
+			std::vector<PolyMatch*> aPolys;
+
+			for (int j = 0; j < numCommandsA; j++) {
+				if (matches[j].polyB == &commandsB[i]) {
+					aPolys.push_back(&matches[j]);
+				}
+			}
+
+			// allow the closest match to do the thingy
+			int bestDivergence = 999999;
+			int bestDiverger = 0;
+
+			for (int p = 0; p < numBPolyMatches[i]; p++) {
+				if (aPolys[p]->divergence < bestDivergence) {
+					bestDiverger = p;
+					bestDivergence = aPolys[p]->divergence;
+				}
+			}
+
+			// now everything that *isn't* the closest match will be given the closest alternative
+			for (int p = 0; p < numBPolyMatches[i]; p++) {
+				if (p != bestDiverger) {
+					int bestRematchDivergence = 99999;
+					int bestRematch = 0;
+
+					for (int m = 0; m < numCommandsB; m++) {
+						if (numBPolyMatches[m] == 0 && commandsB[m].numVertices == aPolys[p]->polyA->numVertices) {
+							int divergence = aPolys[p]->polyA->CalculateDivergence(commandsB[m]);
+
+							if (divergence < bestRematchDivergence) {
+								bestRematchDivergence = divergence;
+								bestRematch = m;
+							}
+						}
+					}
+
+					numBPolyMatches[bestRematch]++;
+					aPolys[p]->divergence = bestRematchDivergence;
+					aPolys[p]->polyB = &commandsB[bestRematch];
+				}
+			}
+		}
+	}
+
 	matchProcessTime = timeGetTime() - time;
+
+	delete[] numBPolyMatches;
 
 	return matches;
 }

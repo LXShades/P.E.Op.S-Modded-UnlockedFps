@@ -74,7 +74,38 @@ public:
 			if (c.iX > maxX) { maxX = c.iX; }
 			if (b.iY > maxY) { maxY = b.iY; }
 			if (c.iY > maxY) { maxY = c.iY; }
+		}
 
+		int CalculateDivergence(const DrawCommand& other) const {
+			int divergence = 0;
+			const int distanceWeight = 5000, colourWeight = 0, textureWeight = 1000;
+			const int avgMaxDistance = 500;
+
+			for (int v = 0; v < numVertices; v++) {
+				int xDiff = (vertices[v].iX - other.vertices[v].iX), yDiff = (vertices[v].iY - other.vertices[v].iY);
+				int rDiff = vertices[v].bCol[0] - other.vertices[v].bCol[0];
+				int gDiff = vertices[v].bCol[1] - other.vertices[v].bCol[1];
+				int bDiff = vertices[v].bCol[2] - other.vertices[v].bCol[2];
+
+				// space difference
+				divergence += ((xDiff ^ (xDiff >> 31)) - (xDiff >> 31) + (yDiff ^ (yDiff >> 31)) - (yDiff >> 31)) * distanceWeight / avgMaxDistance;
+
+				if (other.texture != -1 && texture != -1) {
+					int sDiff = (vertices[v].sow - other.vertices[v].sow) * textureWeight, tDiff = (vertices[v].tow - other.vertices[v].tow) * textureWeight;
+
+					// texture difference
+					divergence += (sDiff ^ (sDiff >> 31)) - (sDiff >> 31) + (tDiff ^ (tDiff >> 31)) - (tDiff >> 31);
+				}
+
+				// colour difference
+				divergence += ((rDiff ^ (rDiff >> 31)) - (rDiff >> 31) + (gDiff ^ (gDiff >> 31)) - (gDiff >> 31) + (bDiff ^ (bDiff >> 31)) - (bDiff >> 31)) * colourWeight / (255 * 3);
+			}
+
+			if (other.texture != texture) {
+				divergence += textureWeight;
+			}
+
+			return divergence;
 		}
 
 		// Rendering attributes
@@ -94,11 +125,11 @@ public:
 	};
 
 	// Links two vertices
-	struct VertexMatch {
+	struct PolyMatch {
 		const DrawCommand* polyA;
 		const DrawCommand* polyB;
 
-		float similarity;
+		float divergence;
 	};
 
 	// Links a DrawCommand to an entity and neighbours
@@ -113,10 +144,10 @@ public:
 	void Render();
 
 	// Draws previousFrameDraws blended towards currentFrameDraws by 'blendfactor'
-	void DrawBlendedCommands(const std::vector<struct FpsInterpolator::VertexMatch>& matches, float blendFactor);
+	void DrawBlendedCommands(const std::vector<struct FpsInterpolator::PolyMatch>& matches, float blendFactor);
 
 	// Draws motion vectors between previous and current frame
-	void DrawMotionVectors(const std::vector<VertexMatch>& matches);
+	void DrawMotionVectors(const std::vector<PolyMatch>& matches);
 
 	// Draws polygons as solid colours (useful for debugging)
 	void DrawSolidPolygons(const std::vector<const DrawCommand*> commands, unsigned int colour);
@@ -126,7 +157,7 @@ public:
 
 public:
 	// Matches vertices from a previous frame to the next frame
-	std::vector<VertexMatch> MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB);
+	std::vector<PolyMatch> MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB);
 
 	// Isolates entities on frame thing
 	std::vector<struct NeighbourLinks> IsolateEntities(const DrawCommand* commands, int numCommands);
