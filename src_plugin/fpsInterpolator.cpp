@@ -120,7 +120,8 @@ void FpsInterpolator::Render() {
 
 		// Freeze frame
 		if (doFreezeFrame) {
-			blendFactor = 0.5f;
+			blendFactor = sin((timeGetTime() - currentFrameTime) / (float)1000.0f * 6.28f) / 2.0f + 0.5f;
+			if (blendFactor >= 1.0f) blendFactor = 0.99f;
 		}
 
 		if (doInterpolation /*&& blendFactor < 1.0f*/) {
@@ -463,17 +464,17 @@ int regionProcessTime = 0;
 
 std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB) {
 	const int regionWidth = 800, regionHeight = 700;
-	const int regionSplits = 4;
+	const int regionSplits = 8;
 	const int numRegions = regionSplits * regionSplits;
 	const int regionSplitX = regionWidth / regionSplits, regionSplitY = regionHeight / regionSplits;
 	const int regionOverlap = 1;
 	std::vector<const DrawCommand*> regionsA[numRegions], regionsB[numRegions];
 	std::vector<VertexMatch> matches;
-	const int distanceWeight = 10000, colourWeight = 100, textureWeight = 0;
+	const int distanceWeight = 5000, colourWeight = 255, textureWeight = 10000;
 
 	// Prealloc regions
 	for (int i = 0; i < numRegions; i++) {
-		regionsB->reserve(300);
+		regionsB[i].reserve(500);
 	}
 
 	// Assign regions in vertsB
@@ -544,10 +545,26 @@ std::vector<FpsInterpolator::VertexMatch> FpsInterpolator::MatchVertices(const D
 
 			for (int v = 0; v < a->numVertices; v++) {
 				int xDiff = (a->vertices[v].iX - b->vertices[v].iX), yDiff = (a->vertices[v].iY - b->vertices[v].iY);
-				int sDiff = (a->vertices[v].sow - b->vertices[v].sow) * textureWeight, tDiff = (a->vertices[v].tow - b->vertices[v].tow) * textureWeight;
+				int rDiff = a->vertices[v].bCol[0] - b->vertices[v].bCol[0];
+				int gDiff = a->vertices[v].bCol[1] - b->vertices[v].bCol[1];
+				int bDiff = a->vertices[v].bCol[2] - b->vertices[v].bCol[2];
 
-				similarity += ((xDiff ^ (xDiff >> 31)) - (xDiff >> 31) + (yDiff ^ (yDiff >> 31)) - (yDiff >> 31)) * distanceWeight / avgMaxDistance
-					 + (((sDiff ^ (sDiff >> 31)) - (sDiff >> 31)) + ((tDiff ^ (tDiff >> 31)) - (tDiff >> 31)));
+				// space difference
+				similarity += ((xDiff ^ (xDiff >> 31)) - (xDiff >> 31) + (yDiff ^ (yDiff >> 31)) - (yDiff >> 31)) * distanceWeight / avgMaxDistance;
+
+				if (b->texture != -1 && a->texture != -1) {
+					int sDiff = (a->vertices[v].sow - b->vertices[v].sow) * textureWeight, tDiff = (a->vertices[v].tow - b->vertices[v].tow) * textureWeight;
+
+					// texture difference
+					similarity += (sDiff ^ (sDiff >> 31)) - (sDiff >> 31) + (tDiff ^ (tDiff >> 31)) - (tDiff >> 31);
+				}
+
+				if (b->texture != a->texture) {
+					similarity += textureWeight;
+				}
+
+				// colour difference
+				similarity += ((rDiff ^ (rDiff >> 31)) - (rDiff >> 31) + (gDiff ^ (gDiff >> 31)) - (gDiff >> 31) + (bDiff ^ (bDiff >> 31)) - (bDiff >> 31)) * colourWeight / (255*3);
 			}
 
 			if (similarity < bestSimilarity) {

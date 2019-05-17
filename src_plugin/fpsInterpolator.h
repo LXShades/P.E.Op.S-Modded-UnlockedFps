@@ -22,7 +22,11 @@ public:
 		int iX, iY, iZ;
 		float x, y, z;
 		float sow, tow;
-		unsigned int col;
+
+		union {
+			unsigned int col;
+			unsigned char bCol[4];
+		};
 	};
 
 	// A draw command containing a draw type, vertices, and STUFF
