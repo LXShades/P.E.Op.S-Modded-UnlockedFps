@@ -63,6 +63,13 @@ public:
 		float similarity;
 	};
 
+	// Links a DrawCommand to an entity and neighbours
+	struct NeighbourLinks {
+		const FpsInterpolator::DrawCommand* neighbours[4];
+
+		int entity;
+	};
+
 public:
 	// Renders the interpolated frames
 	void Render();
@@ -70,11 +77,21 @@ public:
 	// Draws previousFrameDraws blended towards currentFrameDraws by 'blendfactor'
 	void DrawBlendedCommands(const std::vector<struct FpsInterpolator::VertexMatch>& matches, float blendFactor);
 
+	// Draws motion vectors between previous and current frame
+	void DrawMotionVectors(const std::vector<VertexMatch>& matches);
+
+	// Draws polygons as solid colours (useful for debugging)
+	void DrawSolidPolygons(const std::vector<const DrawCommand*> commands, unsigned int colour);
+
 	// Draws entity lines and colours
-	void RenderEntities(const DrawCommand * commands, int numCommands);
+	void DrawEntities(const std::vector<struct NeighbourLinks>& links, const DrawCommand* commands, int numCommands);
 
 public:
+	// Matches vertices from a previous frame to the next frame
 	std::vector<VertexMatch> MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB);
+
+	// Isolates entities on frame thing
+	std::vector<struct NeighbourLinks> IsolateEntities(const DrawCommand* commands, int numCommands);
 
 public:
 	// Records a draw command from the game
@@ -92,11 +109,11 @@ public:
 
 private:
 	std::vector<DrawCommand> currentFrameDraws;
+	std::vector<NeighbourLinks> currentEntities;
 	std::vector<DrawCommand> previousFrameDraws;
+	std::vector<NeighbourLinks> previousEntities;
 	int currentFrameTime = 0;
 	int previousFrameTime = 0;
-
-	std::vector<PsxCommand> currentCommands;
 
 	int framerate;
 	long long int currentFrame = 0;
