@@ -17,95 +17,38 @@ extern "C" {
 	void resetGpuThing();
 }
 
+std::vector<const FpsInterpolator::DrawCommand*> thisSucks;
+
 void FpsInterpolator::Render() {
 	const bool doClear = true;
 	const bool doInterpolation = true;
 	const int numInterpolations = 2;
 
-	if (currentFrameDraws.size() == 0) {
+	if (currentDrawCommands.size() == 0) {
 		return;
 	}
 
 	// Update entities
-	currentEntities = IsolateEntities(&currentFrameDraws[0], currentFrameDraws.size());
+	currentEntities = IsolateEntities(&currentDrawCommands[0], currentDrawCommands.size());
 
 	// Identify interpolatable vertices
-	std::vector<PolyMatch> matches = 
-		(previousFrameDraws.size() > 0 && currentFrameDraws.size() > 0 && doInterpolation) ? 
-			MatchVertices(&previousFrameDraws[0], previousFrameDraws.size(), &currentFrameDraws[0], currentFrameDraws.size()) : std::vector<PolyMatch>();
-
-	// go through matches, determining the most common entity connections
-	// find the most confident matches
-
-	// ok, now be amazing and shit, and go through the entity's neighbours matching everything up nicely
-	std::vector<const DrawCommand*> bestMatches;
-	if (previousEntities.size() > 0 && false) {
-		std::queue<const DrawCommand*> connectedPolys;
-		bool* closed = new bool[previousFrameDraws.size()];
-		PolyMatch* bestMatch = nullptr;
-
-		memset(closed, 0, sizeof(bool) * previousFrameDraws.size());
-
-		do {
-			// Find the best starting point for this entity
-			int bestSimilarity = 99999;
-			bestMatch = nullptr;
-
-			for (int i = 0; i < matches.size(); i++) {
-				if (!closed[i] && matches[i].divergence < bestSimilarity && matches[i].polyA != matches[i].polyB) {
-					bestMatch = &matches[i];
-					bestSimilarity = matches[i].divergence;
-				}
-			}
-
-			if (bestMatch) {
-				// Connet this and the next frame's neighbours equivalently
-				closed[bestMatch->polyA - previousFrameDraws.data()] = true;
-				connectedPolys.push(bestMatch->polyA);
-
-				while (!connectedPolys.empty()) {
-					const DrawCommand* previous = connectedPolys.front();
-					const DrawCommand* next = matches[previous - previousFrameDraws.data()].polyB;
-					const DrawCommand** previousNeighbours = previousEntities[previous - previousFrameDraws.data()].neighbours;
-					const DrawCommand** nextNeighbours = currentEntities[next - currentFrameDraws.data()].neighbours;
-
-					for (int n = 0; n < 4; n++) {
-						if (previousNeighbours[n] != nullptr && nextNeighbours[n] != nullptr && !closed[previousNeighbours[n] - previousFrameDraws.data()]) {
-							connectedPolys.push(previousNeighbours[n]);
-
-							matches[previousNeighbours[n] - previousFrameDraws.data()].polyB = nextNeighbours[n];
-							closed[previousNeighbours[n] - previousFrameDraws.data()] = true;
-						}
-					}
-
-					connectedPolys.pop();
-				}
-
-				bestMatches.push_back(bestMatch->polyA);
-			}
-		} while (bestMatch);
-		
-		delete[] closed;
+	std::vector<PolyMatch> matches;
+	
+	if (doInterpolation) {
+		matches = MatchVerticesByEntity();
 	}
+	
+	// Do speed controls
+	static int targetFrameDuration = 1000 / 25;
+
+	if (HIWORD(GetKeyState(VK_RIGHT))) { targetFrameDuration -= 16; }
+	if (HIWORD(GetKeyState(VK_LEFT))) { targetFrameDuration += 16; }
+	if (HIWORD(GetKeyState(VK_UP))) { targetFrameDuration = 16; }
+	if (targetFrameDuration <= 0) { targetFrameDuration = 1; }
 
 	// Begin render
 	bool doRenderFrame = true;
 	int numFramesRendered = 0;
-
-	static int targetFrameDuration = 1000/25;
-
-	if (HIWORD(GetKeyState(VK_RIGHT))) {
-		targetFrameDuration -= 16;
-	}
-	if (HIWORD(GetKeyState(VK_LEFT))) {
-		targetFrameDuration += 16;
-	}
-	if (HIWORD(GetKeyState(VK_DOWN))) {
-		targetFrameDuration = 16;
-	}
-	if (targetFrameDuration <= 0) {
-		targetFrameDuration = 1;
-	}
 
 	float blendFactor = 0.0f;
 	do {
@@ -133,9 +76,9 @@ void FpsInterpolator::Render() {
 			if (blendFactor > 1) blendFactor = 1;
 
 			DrawBlendedCommands(matches, blendFactor);
-			DrawSolidPolygons(bestMatches, 0xFF00FF00);
-			DrawMotionVectors(matches);
-			//DrawEntities(currentEntities, currentFrameDraws.data(), currentFrameDraws.size());
+			//DrawMotionVectors(matches);
+			//DrawSolidPolygons(thisSucks, 0xFF000000);
+			//DrawEntities(currentEntities, currentDrawCommands.data(), currentDrawCommands.size());
 		}
 
 		// Present to screen
@@ -143,9 +86,9 @@ void FpsInterpolator::Render() {
 	} while (blendFactor < 1.0f && doInterpolation);
 
 	// Replace the command lists
-	previousFrameDraws = std::move(currentFrameDraws);
+	previousDrawCommands = std::move(currentDrawCommands);
 	previousEntities = std::move(currentEntities);
-	currentFrameDraws.clear();
+	currentDrawCommands.clear();
 	currentEntities.clear();
 	
 	// Update timings
@@ -181,8 +124,8 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<PolyMatch>& matches,
 	isRendering = true;
 
 	// Render each interpolatable draw command
-	for (DrawCommand& command : previousFrameDraws) {
-		const PolyMatch& match = matches[&command - &previousFrameDraws[0]];
+	for (DrawCommand& command : previousDrawCommands) {
+		const PolyMatch& match = matches[&command - &previousDrawCommands[0]];
 		const DrawCommand* nextCommand = match.polyB;
 
 		// set texture
@@ -204,6 +147,7 @@ void FpsInterpolator::DrawBlendedCommands(const std::vector<PolyMatch>& matches,
 
 		// set blend mode
 		SETGLMODE(currentBlend ? glEnable(GL_BLEND) : glDisable(GL_BLEND), nextCommand->isBlended, currentBlend);
+		glDisable(GL_BLEND);
 
 		// start poly render
 		if (command.numVertices == 4) {
@@ -274,7 +218,7 @@ void FpsInterpolator::DrawMotionVectors(const std::vector<PolyMatch>& matches) {
 	glEnd();
 }
 
-void FpsInterpolator::DrawSolidPolygons(const std::vector<const DrawCommand*> commands, GLuint colour) {
+void FpsInterpolator::DrawSolidPolygons(const std::vector<const DrawCommand*>& commands, GLuint colour) {
 	if (commands.size() == 0) {
 		return;
 	}
@@ -536,7 +480,7 @@ std::vector<FpsInterpolator::PolyMatch> FpsInterpolator::MatchVertices(const Dra
 	}
 
 	// Find over-matched polygons and identify stuff that make it not do that anymore...
-	for (int i = 0; i < numCommandsB; i++) {
+	for (int i = 0; i < numCommandsB && 0; i++) {
 		if (numBPolyMatches[i] > 1) {
 			// find them again (move this?)
 			std::vector<PolyMatch*> aPolys;
@@ -590,9 +534,132 @@ std::vector<FpsInterpolator::PolyMatch> FpsInterpolator::MatchVertices(const Dra
 	return matches;
 }
 
+#include <map>
+
+std::vector<FpsInterpolator::PolyMatch> FpsInterpolator::MatchVerticesByEntity() {
+	std::vector<PolyMatch> matches;
+
+	// for now just send it the previous frame
+	for (int i = 0; i < previousDrawCommands.size(); i++) {
+		PolyMatch match;
+
+		match.polyA = &previousDrawCommands[i];
+		match.polyB = &previousDrawCommands[i];
+
+		matches.push_back(match);
+	}
+
+	// now identify distinctive objects in both frames
+	DWORD time = timeGetTime();
+	std::map<int, int> numDistinctivePolys[2];
+	std::map<int, int[5]> distinctivePolys[2];
+
+	for (int frame = 0; frame < 2; frame++) {
+		std::vector<DrawCommand>* commandList = frame == 0 ? &previousDrawCommands : &currentDrawCommands;
+		std::map<int, int>* distinctiveNum = frame == 0 ? &numDistinctivePolys[0] : &numDistinctivePolys[1];
+		std::map<int, int[5]>* distinctiveRef = frame == 0 ? &distinctivePolys[0] : &distinctivePolys[1];
+
+		for (DrawCommand& command : *commandList) {
+			float minSow = 2, maxSow = -2, minTow = 2, maxTow = -2;
+
+			for (int v = 0; v < command.numVertices; v++) {
+				if (command.vertices[v].tow < minTow) minTow = command.vertices[v].tow;
+				if (command.vertices[v].sow < minSow) minSow = command.vertices[v].sow;
+				if (command.vertices[v].tow > maxTow) maxTow = command.vertices[v].tow;
+				if (command.vertices[v].sow > maxSow) maxSow = command.vertices[v].sow;
+			}
+
+			int index = (command.texture << 24) | ((int)(minSow * 63) << 18) | ((int)(maxSow * 63) << 12) | ((int)(minTow * 63) << 6) | (int)(maxTow * 63);
+			int& num = (*distinctiveNum)[index];
+
+			if (num < 5) {
+				(*distinctiveRef)[index][num++] = (&command - commandList->data());
+			}
+		}
+	}
+	
+	matchProcessTime = timeGetTime() - time;
+
+	// match the distinctive polygons (if possible)
+	for (std::pair<int, int> keys : numDistinctivePolys[0]) {
+		if (keys.second == 1) {
+			if (numDistinctivePolys[1][keys.first] == 1) {
+				bool* closed = new bool[previousDrawCommands.size()]();
+
+				matches[distinctivePolys[0][keys.first][0]].polyB = &currentDrawCommands[distinctivePolys[1][keys.first][0]];
+
+				// add the neighbours of this polygon to the thing
+				std::queue<int> neighbours;
+				
+				neighbours.push(distinctivePolys[0][keys.first][0]);
+				closed[distinctivePolys[0][keys.first][0]] = true;
+
+				int i = 0;
+				while (!neighbours.empty()) {
+					int prevIndex = neighbours.front();
+					int nextIndex = matches[prevIndex].polyB - currentDrawCommands.data();
+
+					neighbours.pop();
+
+					for (int i = 0; i < 4; i++) {
+						int neighbourPrevIndex = previousEntities[prevIndex].neighbours[i] - previousDrawCommands.data();
+						if (previousEntities[prevIndex].neighbours[i] != nullptr && currentEntities[nextIndex].neighbours[i] != nullptr && !closed[neighbourPrevIndex]) {
+							if (matches[neighbourPrevIndex].polyB != matches[neighbourPrevIndex].polyA) {
+								// if this is a better candidate, replace it; otherwise don't
+								if (matches[neighbourPrevIndex].polyA->CalculateDivergence(*matches[neighbourPrevIndex].polyB) < matches[neighbourPrevIndex].polyA->CalculateDivergence(*currentEntities[nextIndex].neighbours[i])) {
+									continue;
+								}
+							}
+
+							closed[neighbourPrevIndex] = true;
+							neighbours.push(neighbourPrevIndex);
+							matches[neighbourPrevIndex].polyB = currentEntities[nextIndex].neighbours[i];
+						}
+					}
+
+					i++;
+				}
+
+				delete[] closed;
+			}
+		}
+	}
+
+	// render the distinctive ones
+	int smallestValue = 999999;
+	int smallestValueKey = 0;
+	for (std::pair<int, int> keys : numDistinctivePolys[0]) {
+		if (keys.second < smallestValue) {
+			smallestValue = keys.second;
+			smallestValueKey = keys.first;
+		}
+	}
+
+	std::vector<const DrawCommand*> commands;
+
+	for (DrawCommand& command : previousDrawCommands) {
+		float minSow = 2, maxSow = -2, minTow = 2, maxTow = -2;
+
+		for (int v = 0; v < command.numVertices; v++) {
+			if (command.vertices[v].tow < minTow) minTow = command.vertices[v].tow;
+			if (command.vertices[v].sow < minSow) minSow = command.vertices[v].sow;
+			if (command.vertices[v].tow > maxTow) maxTow = command.vertices[v].tow;
+			if (command.vertices[v].sow > maxSow) maxSow = command.vertices[v].sow;
+		}
+
+		if (numDistinctivePolys[0][(command.texture << 24) | ((int)(minSow * 63) << 18) | ((int)(maxSow * 63) << 12) | ((int)(minTow * 63) << 6) | (int)(maxTow * 63)] <= 1) {
+			commands.push_back(&command);
+		}
+	}
+
+	thisSucks = commands;
+
+	return matches;
+}
+
 void FpsInterpolator::RecordDrawCommand(const DrawCommand& command) {
 	if (!isRendering) {
-		currentFrameDraws.push_back(command);
+		currentDrawCommands.push_back(command);
 	}
 }
 

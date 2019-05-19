@@ -29,6 +29,7 @@ public:
 
 		// Helper attributes
 		int iX, iY, iZ; // integer versions of coords
+		int iU, iV; // absolute UV in PSX VRAM
 	};
 
 	// A draw command containing a draw type, vertices, and STUFF
@@ -150,7 +151,7 @@ public:
 	void DrawMotionVectors(const std::vector<PolyMatch>& matches);
 
 	// Draws polygons as solid colours (useful for debugging)
-	void DrawSolidPolygons(const std::vector<const DrawCommand*> commands, unsigned int colour);
+	void DrawSolidPolygons(const std::vector<const DrawCommand*>& commands, unsigned int colour);
 
 	// Draws entity lines and colours
 	void DrawEntities(const std::vector<struct NeighbourLinks>& links, const DrawCommand* commands, int numCommands);
@@ -158,6 +159,9 @@ public:
 public:
 	// Matches vertices from a previous frame to the next frame
 	std::vector<PolyMatch> MatchVertices(const DrawCommand* vertsA, int numVertsA, const DrawCommand* vertsB, int numVertsB);
+
+	// Matches vertices (attempt 2)
+	std::vector<FpsInterpolator::PolyMatch> MatchVerticesByEntity();
 
 	// Isolates entities on frame thing
 	std::vector<struct NeighbourLinks> IsolateEntities(const DrawCommand* commands, int numCommands);
@@ -177,9 +181,9 @@ public:
 	void SetFrameRate(int framerate);
 
 private:
-	std::vector<DrawCommand> currentFrameDraws;
+	std::vector<DrawCommand> currentDrawCommands;
 	std::vector<NeighbourLinks> currentEntities;
-	std::vector<DrawCommand> previousFrameDraws;
+	std::vector<DrawCommand> previousDrawCommands;
 	std::vector<NeighbourLinks> previousEntities;
 	int currentFrameTime = 0;
 	int previousFrameTime = 0;
